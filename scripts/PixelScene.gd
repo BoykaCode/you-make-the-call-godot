@@ -122,18 +122,148 @@ func _guy(x: float, y: float, shirt: Color, f: int, o: Dictionary = {}) -> void:
 	_px(x + (5 if l else 4), y - 3, 2, 3, Color("#111"))
 
 # ---------- animations (one per scenario) ----------
+## Retro Goal-style top-down slide tackle. Whole pitch visible from above,
+## players are ~5x8 blocks with shirt/shorts/head, real run + slide cycles.
 func _anim_slide(t: float) -> void:
-	var f = _F(t)
+	_pitch_topdown()
+	var f = _F(t)  # 2-frame walk cycle
+
+	# Attacker (RED shirt) dribbles left→right along mid-lane, then falls
+	# Defender (BLU shirt) sprints in from upper-left, slides at t≈0.55
+	# Ball tracks attacker's front foot until tackle, then squirts forward
+	var att_x: float
+	var att_y: float = 46
+	var def_x: float
+	var def_y: float
+	var ball_x: float
+	var ball_y: float
+
 	if t < 0.55:
 		var p = _ph(t, 0, 0.55)
-		_guy(60 + 40 * p, G, RED, f)
-		_ball_at(60 + 40 * p + 9, G, f)
-		_guy(30 + 58 * p, G, BLU, f)
+		att_x = 60 + 60 * p
+		def_x = 20 + 80 * p
+		def_y = 30 + 15 * p  # angles down toward attacker
+		ball_x = att_x + 8
+		ball_y = att_y - 1
+		_topdown_player(att_x, att_y, RED, WHITE, f, 0)         # running east
+		_topdown_player(def_x, def_y, BLU, WHITE, f, 30)        # angling in
+		_ball_topdown(ball_x, ball_y, f)
 	else:
-		_guy(98, G, RED, 0, {"fall": true})
-		_guy(82, G, BLU, 0, {"fall": true})
-		_ball_at(112 + 46 * _ph(t, 0.55, 1), G, _F(t))
-		_bang(100, 48)
+		var q = _ph(t, 0.55, 1)
+		# Defender extends into a slide — long horizontal shape
+		var slide_x = 90 + 8 * q
+		var slide_y = 46
+		_topdown_player_sliding(slide_x, slide_y, BLU, WHITE, 90)
+		# Attacker tumbles — smaller crumpled shape past contact point
+		_topdown_player_fallen(100, 45, RED, WHITE, q)
+		# Ball squirts forward past the tackle
+		ball_x = 108 + 60 * q
+		ball_y = 45 - 6 * sin(q * PI) * 0.5
+		_ball_topdown(ball_x, ball_y, f)
+		# Impact spark
+		if q < 0.35:
+			_impact_burst(96, 46, 1.0 - q / 0.35)
+
+func _pitch_topdown() -> void:
+	# Alternating grass stripes going TOP-DOWN (bands across the pitch length)
+	var band_a = Color("#2E9C4C")
+	var band_b = Color("#27893F")
+	for x in range(0, int(LOGICAL_W), 24):
+		var c = band_a if (x / 24) % 2 == 0 else band_b
+		_px(x, 0, 24, LOGICAL_H, c)
+	# Halfway line vertical
+	_px(int(LOGICAL_W / 2) - 1, 0, 1, int(LOGICAL_H), Color(1, 1, 1, 0.75))
+	# Center circle (small)
+	_circle_ring(int(LOGICAL_W / 2), int(LOGICAL_H / 2), 8, Color(1, 1, 1, 0.75))
+	# Sidelines
+	_px(0, 0, LOGICAL_W, 1, Color(1, 1, 1, 0.6))
+	_px(0, LOGICAL_H - 1, LOGICAL_W, 1, Color(1, 1, 1, 0.6))
+	# Left penalty box
+	_px(0, 22, 20, 1, WHITE)
+	_px(20, 22, 1, 40, WHITE)
+	_px(0, 62, 20, 1, WHITE)
+	# Right penalty box
+	_px(172, 22, 20, 1, WHITE)
+	_px(172, 22, 1, 40, WHITE)
+	_px(172, 62, 20, 1, WHITE)
+	# Goals (very small ends)
+	_px(0, 36, 2, 12, WHITE)
+	_px(190, 36, 2, 12, WHITE)
+
+func _circle_ring(cx: int, cy: int, r: int, col: Color) -> void:
+	# Rough pixel ring — plot 16 arc points
+	for i in range(16):
+		var ang = i / 16.0 * TAU
+		var x = cx + int(round(cos(ang) * r))
+		var y = cy + int(round(sin(ang) * r))
+		_px(x, y, 1, 1, col)
+
+func _topdown_player(x: float, y: float, shirt: Color, shorts: Color, f: int, facing_deg: float) -> void:
+	# Facing_deg unused for simple top-down; player facing "east" (+x)
+	# Shadow
+	_px(x - 2, y + 4, 6, 1, Color(0, 0, 0, 0.35))
+	# Shorts (below shirt in top-down = "bottom" of sprite, dark)
+	_px(x - 2, y + 2, 6, 2, Color("#111"))
+	# Shirt (main body)
+	_px(x - 2, y - 2, 6, 4, shirt)
+	# Head (skin on top)
+	_px(x - 1, y - 5, 4, 3, SKIN)
+	# Hair dot
+	_px(x - 1, y - 6, 4, 1, Color("#3B2818"))
+	# Feet (2-frame alternating)
+	if f == 0:
+		_px(x - 2, y + 4, 2, 1, Color("#111"))
+		_px(x + 2, y + 4, 2, 1, Color("#111"))
+	else:
+		_px(x - 1, y + 4, 2, 1, Color("#111"))
+		_px(x + 1, y + 4, 2, 1, Color("#111"))
+
+func _topdown_player_sliding(x: float, y: float, shirt: Color, shorts: Color, facing_deg: float) -> void:
+	# Sliding = elongated horizontal shape, arms tucked
+	# Shadow (long)
+	_px(x - 8, y + 3, 16, 2, Color(0, 0, 0, 0.4))
+	# Legs stretched forward
+	_px(x + 2, y - 1, 6, 3, Color("#111"))
+	_px(x + 8, y, 3, 1, Color("#111"))  # foot
+	# Shirt (compressed under motion)
+	_px(x - 4, y - 2, 6, 4, shirt)
+	# Head trailing
+	_px(x - 7, y - 1, 3, 2, SKIN)
+	# Motion lines
+	_px(x - 10, y - 1, 2, 1, Color(1, 1, 1, 0.7))
+	_px(x - 10, y + 1, 2, 1, Color(1, 1, 1, 0.7))
+
+func _topdown_player_fallen(x: float, y: float, shirt: Color, shorts: Color, q: float) -> void:
+	# Crumpled: shirt is a lump, legs sprawled at odd angles
+	var jitter = int(q * 3) % 2
+	# Shadow
+	_px(x - 4, y + 3, 10, 2, Color(0, 0, 0, 0.35))
+	# Body scrunched
+	_px(x - 3, y - 2, 6, 4, shirt)
+	# Head off to side
+	_px(x - 6, y, 3, 3, SKIN)
+	# Sprawled leg 1 (up-right)
+	_px(x + 3, y - 2 + jitter, 4, 2, Color("#111"))
+	# Sprawled leg 2 (down)
+	_px(x + 2, y + 2, 3, 2, Color("#111"))
+
+func _ball_topdown(x: float, y: float, f: int) -> void:
+	# Shadow below the ball
+	_px(x - 1, y + 3, 3, 1, Color(0, 0, 0, 0.4))
+	# Ball
+	_px(x - 1, y - 1, 3, 3, WHITE)
+	# Pentagon dot for classic look
+	_px(x + (0 if f == 0 else 1) - 1, y, 1, 1, BLACK)
+
+func _impact_burst(x: float, y: float, intensity: float) -> void:
+	# Little cross of yellow pixels
+	var alpha = intensity
+	var spark = Color(1, 0.85, 0.1, alpha)
+	_px(x, y - 3, 1, 2, spark)
+	_px(x, y + 2, 1, 2, spark)
+	_px(x - 3, y, 2, 1, spark)
+	_px(x + 2, y, 2, 1, spark)
+	_px(x - 1, y - 1, 3, 3, Color(1, 1, 0.4, alpha * 0.6))
 
 func _anim_passback(t: float) -> void:
 	var f = _F(t)
